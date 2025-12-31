@@ -1,0 +1,46 @@
+name: Docker CI/CD Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # 1. Docker Hub 로그인 (Secrets에 아이디/비번 등록 필요)
+      - name: Docker Hub 로그인
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 2. 이미지 빌드 및 업로드
+      - name: 빌드 및 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/my-python-app:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: AWS 서버 접속 및 도커 실행
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ubuntu
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            # 기존 컨테이너 중지 및 삭제
+            sudo docker stop my-app || true
+            sudo docker rm my-app || true
+            # 최신 이미지 가져오기
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/my-python-app:latest
+            # 새 컨테이너 실행
+            sudo docker run -d --name my-app ${{ secrets.DOCKERHUB_USERNAME }}/my-python-app:latest
